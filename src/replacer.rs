@@ -17,7 +17,7 @@ pub trait Replacer {
     ///
     /// For example, a no-op replacement would be
     /// `dst.push_str(caps.get(0).unwrap().as_str())`.
-    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String);
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut Vec<u8>);
 
     /// Return a fixed unchanging replacement string.
     ///
@@ -26,7 +26,7 @@ pub trait Replacer {
     /// be beneficial to avoid finding sub-captures.
     ///
     /// In general, this is called once for every call to `replacen`.
-    fn no_expansion(&mut self) -> Option<Cow<str>> {
+    fn no_expansion(&mut self) -> Option<Cow<[u8]>> {
         None
     }
 
@@ -63,80 +63,80 @@ pub trait Replacer {
 pub struct ReplacerRef<'a, R: ?Sized>(&'a mut R);
 
 impl<'a, R: Replacer + ?Sized + 'a> Replacer for ReplacerRef<'a, R> {
-    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut Vec<u8>) {
         self.0.replace_append(caps, dst)
     }
-    fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
+    fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         self.0.no_expansion()
     }
 }
 
 impl<'a> Replacer for &'a str {
-    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut Vec<u8>) {
         caps.expand(*self, dst);
     }
 
-    fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
+    fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         no_expansion(self)
     }
 }
 
 impl<'a> Replacer for &'a String {
-    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut Vec<u8>) {
         self.as_str().replace_append(caps, dst)
     }
 
-    fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
+    fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         no_expansion(self)
     }
 }
 
 impl Replacer for String {
-    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut Vec<u8>) {
         self.as_str().replace_append(caps, dst)
     }
 
-    fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
+    fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         no_expansion(self)
     }
 }
 
 impl<'a> Replacer for Cow<'a, str> {
-    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut Vec<u8>) {
         self.as_ref().replace_append(caps, dst)
     }
 
-    fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
+    fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         no_expansion(self)
     }
 }
 
 impl<'a> Replacer for &'a Cow<'a, str> {
-    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut Vec<u8>) {
         self.as_ref().replace_append(caps, dst)
     }
 
-    fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
+    fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         no_expansion(self)
     }
 }
 
-fn no_expansion<T: AsRef<str>>(t: &T) -> Option<Cow<'_, str>> {
+fn no_expansion<T: AsRef<str>>(t: &T) -> Option<Cow<'_, [u8]>> {
     let s = t.as_ref();
     if s.contains('$') {
         None
     } else {
-        Some(Cow::Borrowed(s))
+        Some(Cow::Borrowed(s.as_bytes()))
     }
 }
 
 impl<F, T> Replacer for F
 where
     F: FnMut(&Captures<'_>) -> T,
-    T: AsRef<str>,
+    T: AsRef<[u8]>,
 {
-    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
-        dst.push_str((*self)(caps).as_ref());
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut Vec<u8>) {
+        dst.extend((*self)(caps).as_ref());
     }
 }
 
@@ -149,14 +149,14 @@ where
 ///
 /// `'t` is the lifetime of the literal text.
 #[derive(Clone, Debug)]
-pub struct NoExpand<'t>(pub &'t str);
+pub struct NoExpand<'t>(pub &'t [u8]);
 
 impl<'t> Replacer for NoExpand<'t> {
-    fn replace_append(&mut self, _: &Captures<'_>, dst: &mut String) {
-        dst.push_str(self.0);
+    fn replace_append(&mut self, _: &Captures<'_>, dst: &mut Vec<u8>) {
+        dst.extend(self.0);
     }
 
-    fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
+    fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         Some(Cow::Borrowed(self.0))
     }
 }

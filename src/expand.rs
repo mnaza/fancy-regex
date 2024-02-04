@@ -141,15 +141,15 @@ impl Expander {
 
     /// Appends the expansion produced by `expansion` to `dst`.  Potentially more efficient
     /// than calling `expansion` directly and appending to an existing string.
-    pub fn append_expansion(&self, dst: &mut String, template: &str, captures: &Captures<'_>) {
-        let mut cursor = core::mem::take(dst).into_bytes();
+    pub fn append_expansion(&self, dst: &mut Vec<u8>, template: &str, captures: &Captures<'_>) {
+        let mut cursor = core::mem::take(dst);
         #[cfg(feature = "std")]
         self.write_expansion(&mut cursor, template, captures)
             .expect("expansion succeeded");
         #[cfg(not(feature = "std"))]
         self.write_expansion_vec(&mut cursor, template, captures)
             .expect("expansion succeeded");
-        *dst = String::from_utf8(cursor).expect("expansion is UTF-8");
+        *dst = cursor;
     }
 
     /// Writes the expansion produced by `expansion` to `dst`.  Potentially more efficient
@@ -165,16 +165,19 @@ impl Expander {
             Step::Char(c) => write!(dst, "{}", c),
             Step::GroupName(name) => {
                 if let Some(m) = captures.name(name) {
-                    write!(dst, "{}", m.as_str())
+                    dst.write_all(m.data)?;
+                    Ok(())
                 } else if let Some(m) = name.parse().ok().and_then(|num| captures.get(num)) {
-                    write!(dst, "{}", m.as_str())
+                    dst.write_all(m.data)?;
+                    Ok(())
                 } else {
                     Ok(())
                 }
             }
             Step::GroupNum(num) => {
                 if let Some(m) = captures.get(num) {
-                    write!(dst, "{}", m.as_str())
+                    dst.write_all(m.data)?;
+                    Ok(())
                 } else {
                     Ok(())
                 }
@@ -195,16 +198,16 @@ impl Expander {
             Step::Char(c) => Ok(dst.extend(c.to_string().as_bytes())),
             Step::GroupName(name) => {
                 if let Some(m) = captures.name(name) {
-                    Ok(dst.extend(m.as_str().as_bytes()))
+                    Ok(dst.extend(m.data))
                 } else if let Some(m) = name.parse().ok().and_then(|num| captures.get(num)) {
-                    Ok(dst.extend(m.as_str().as_bytes()))
+                    Ok(dst.extend(m.data))
                 } else {
                     Ok(())
                 }
             }
             Step::GroupNum(num) => {
                 if let Some(m) = captures.get(num) {
-                    Ok(dst.extend(m.as_str().as_bytes()))
+                    Ok(dst.extend(m.data))
                 } else {
                     Ok(())
                 }

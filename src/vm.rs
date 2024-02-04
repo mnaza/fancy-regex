@@ -401,25 +401,25 @@ impl State {
     }
 }
 
-fn codepoint_len_at(s: &str, ix: usize) -> usize {
-    codepoint_len(s.as_bytes()[ix])
+fn codepoint_len_at(s: &[u8], ix: usize) -> usize {
+    codepoint_len(s[ix])
 }
 
 #[inline]
-fn matches_literal(s: &str, ix: usize, end: usize, literal: &str) -> bool {
+fn matches_literal(s: &[u8], ix: usize, end: usize, literal: &[u8]) -> bool {
     // Compare as bytes because the literal might be a single byte char whereas ix
     // points to a multibyte char. Comparing with str would result in an error like
     // "byte index N is not a char boundary".
-    end <= s.len() && &s.as_bytes()[ix..end] == literal.as_bytes()
+    end <= s.len() && &s[ix..end] == literal
 }
 
 /// Run the program with trace printing for debugging.
-pub fn run_trace(prog: &Prog, s: &str, pos: usize) -> Result<Option<Vec<usize>>> {
+pub fn run_trace(prog: &Prog, s: &[u8], pos: usize) -> Result<Option<Vec<usize>>> {
     run(prog, s, pos, OPTION_TRACE, &RegexOptions::default())
 }
 
 /// Run the program with default options.
-pub fn run_default(prog: &Prog, s: &str, pos: usize) -> Result<Option<Vec<usize>>> {
+pub fn run_default(prog: &Prog, s: &[u8], pos: usize) -> Result<Option<Vec<usize>>> {
     run(prog, s, pos, 0, &RegexOptions::default())
 }
 
@@ -427,7 +427,7 @@ pub fn run_default(prog: &Prog, s: &str, pos: usize) -> Result<Option<Vec<usize>
 #[allow(clippy::cognitive_complexity)]
 pub(crate) fn run(
     prog: &Prog,
-    s: &str,
+    s: &[u8],
     pos: usize,
     option_flags: u32,
     options: &RegexOptions,
@@ -476,7 +476,7 @@ pub(crate) fn run(
                     }
                 }
                 Insn::AnyNoNL => {
-                    if ix < s.len() && s.as_bytes()[ix] != b'\n' {
+                    if ix < s.len() && s[ix] != b'\n' {
                         ix += codepoint_len_at(s, ix);
                     } else {
                         break 'fail;
@@ -484,39 +484,29 @@ pub(crate) fn run(
                 }
                 Insn::Lit(ref val) => {
                     let ix_end = ix + val.len();
-                    if !matches_literal(s, ix, ix_end, val) {
+                    if !matches_literal(s, ix, ix_end, val.as_bytes()) {
                         break 'fail;
                     }
                     ix = ix_end
                 }
                 Insn::Assertion(assertion) => {
                     if !match assertion {
-                        Assertion::StartText => look_matcher.is_start(s.as_bytes(), ix),
-                        Assertion::EndText => look_matcher.is_end(s.as_bytes(), ix),
-                        Assertion::StartLine { crlf: false } => {
-                            look_matcher.is_start_lf(s.as_bytes(), ix)
+                        Assertion::StartText => look_matcher.is_start(s, ix),
+                        Assertion::EndText => look_matcher.is_end(s, ix),
+                        Assertion::StartLine { crlf: false } => look_matcher.is_start_lf(s, ix),
+                        Assertion::StartLine { crlf: true } => look_matcher.is_start_crlf(s, ix),
+                        Assertion::EndLine { crlf: false } => look_matcher.is_end_lf(s, ix),
+                        Assertion::EndLine { crlf: true } => look_matcher.is_end_crlf(s, ix),
+                        Assertion::LeftWordBoundary => {
+                            look_matcher.is_word_start_unicode(s, ix).unwrap()
                         }
-                        Assertion::StartLine { crlf: true } => {
-                            look_matcher.is_start_crlf(s.as_bytes(), ix)
-                        }
-                        Assertion::EndLine { crlf: false } => {
-                            look_matcher.is_end_lf(s.as_bytes(), ix)
-                        }
-                        Assertion::EndLine { crlf: true } => {
-                            look_matcher.is_end_crlf(s.as_bytes(), ix)
-                        }
-                        Assertion::LeftWordBoundary => look_matcher
-                            .is_word_start_unicode(s.as_bytes(), ix)
-                            .unwrap(),
                         Assertion::RightWordBoundary => {
-                            look_matcher.is_word_end_unicode(s.as_bytes(), ix).unwrap()
+                            look_matcher.is_word_end_unicode(s, ix).unwrap()
                         }
-                        Assertion::WordBoundary => {
-                            look_matcher.is_word_unicode(s.as_bytes(), ix).unwrap()
+                        Assertion::WordBoundary => look_matcher.is_word_unicode(s, ix).unwrap(),
+                        Assertion::NotWordBoundary => {
+                            look_matcher.is_word_unicode_negate(s, ix).unwrap()
                         }
-                        Assertion::NotWordBoundary => look_matcher
-                            .is_word_unicode_negate(s.as_bytes(), ix)
-                            .unwrap(),
                     } {
                         break 'fail;
                     }
